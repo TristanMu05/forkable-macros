@@ -88,6 +88,24 @@
   .card h2 { font-size: 17px; }
   .card .sub { color: var(--muted); font-size: 12px; margin: 3px 0 14px; }
   .card .close { float: right; background: none; border: none; color: var(--muted); font-size: 18px; cursor: pointer; }
+  .modal-flex { display: flex; gap: 14px; align-items: flex-start; }
+  .opts-col { flex: 1; min-width: 0; }
+  .macro-box {
+    flex: 0 0 126px; background: var(--tile); border: 1px solid var(--tile-border);
+    border-radius: 10px; padding: 12px; text-align: center;
+  }
+  .macro-box .kcal { font-size: 24px; font-weight: 800; color: var(--teal); line-height: 1.1; }
+  .macro-box .kcal small { display: block; font-size: 11px; color: var(--muted); font-weight: 600; }
+  .macro-box .m-row {
+    display: flex; justify-content: space-between; font-size: 12px; margin-top: 7px;
+  }
+  .macro-box .m-row .m-label { color: var(--muted); }
+  .macro-box .m-conf { margin-top: 9px; font-size: 10.5px; color: var(--muted); }
+  .macro-box .m-note { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+  @media (max-width: 540px) {
+    .modal-flex { flex-direction: column; }
+    .macro-box { flex: none; width: 100%; }
+  }
   .opt {
     display: grid; grid-template-columns: 74px 1fr 52px; align-items: center; gap: 10px;
     width: 100%; background: none; border: 1px solid transparent; border-radius: 10px;
@@ -336,23 +354,68 @@ function renderBoard() {
   }).join("");
 }
 
+// Cached macros for the popup, fetched read-only through /bulk (never
+// triggers an estimation). Keyed by entity id; "loading" prevents duplicate
+// fetches while one is in flight.
+const macroCache = new Map();
+
+function macroBoxHtml(e) {
+  const c = macroCache.get(e.id);
+  let inner;
+  if (!c || c.state === "loading") {
+    inner = `<div class="m-note">Loading macros&hellip;</div>`;
+  } else if (!c.macro) {
+    inner = `<div class="m-note">No macro data yet. It shows up once someone's extension scans this menu.</div>`;
+  } else {
+    const m = c.macro;
+    inner = `
+      <div class="kcal">${esc(m.calories)}<small>kcal</small></div>
+      <div class="m-row"><span class="m-label">protein</span><b>${esc(m.protein)}g</b></div>
+      <div class="m-row"><span class="m-label">carbs</span><b>${esc(m.carbs)}g</b></div>
+      <div class="m-row"><span class="m-label">fat</span><b>${esc(m.fat)}g</b></div>
+      ${m.confidence ? `<div class="m-conf">${esc(m.confidence)} confidence</div>` : ""}`;
+  }
+  return `<div class="macro-box">${inner}</div>`;
+}
+
+async function fetchMacros(e) {
+  if (e.kind !== "i" || macroCache.has(e.id)) return;
+  macroCache.set(e.id, { state: "loading" });
+  try {
+    const r = await fetch(WORKER_URL + "/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-team-token": token },
+      body: JSON.stringify({ items: [{ restaurant: e.sub, name: e.name }] }),
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || "lookup failed");
+    macroCache.set(e.id, { state: "done", macro: (d.results || [])[0] || null });
+  } catch {
+    macroCache.delete(e.id); // transient failure: retry on next open
+  }
+  if (modalEntity && modalEntity.kind === "i" && modalEntity.id === e.id) renderModal();
+}
+
 function renderModal() {
   const e = modalEntity;
   if (!e) { $("modal").classList.remove("open"); return; }
   const a = aggFor(aggregate(), e);
   const max = Math.max(1, ...TIERS.map(t => a.counts[t.key]));
-  $("modal-card").innerHTML = `
-    <button class="close" id="modal-close">✕</button>
-    <h2>${esc(titleCase(e.name))}</h2>
-    <div class="sub">${e.sub ? esc(titleCase(e.sub)) + " · " : ""}${a.total} vote${a.total === 1 ? "" : "s"} so far</div>
-    ${TIERS.map(t => `
+  const opts = TIERS.map(t => `
       <button class="opt${a.mine === t.key ? " mine" : ""}" data-tier="${t.key}">
         <span class="chip" style="background:${t.color}">${t.label}</span>
         <span class="bar"><i style="width:${(a.counts[t.key] / max) * 100}%;background:${t.flat}"></i></span>
         <span class="count">${a.counts[t.key]}${a.mine === t.key ? " ✓" : ""}</span>
-      </button>`).join("")}
-    <div class="hint">Tap a tier to cast your vote, or tap your current pick again to remove it.
+      </button>`).join("") +
+    `<div class="hint">Tap a tier to cast your vote, or tap your current pick again to remove it.
     You can change your vote anytime; placement follows the average.</div>`;
+  $("modal-card").innerHTML = `
+    <button class="close" id="modal-close">✕</button>
+    <h2>${esc(titleCase(e.name))}</h2>
+    <div class="sub">${e.sub ? esc(titleCase(e.sub)) + " · " : ""}${a.total} vote${a.total === 1 ? "" : "s"} so far</div>
+    ${e.kind === "i"
+      ? `<div class="modal-flex">${macroBoxHtml(e)}<div class="opts-col">${opts}</div></div>`
+      : opts}`;
   $("modal").classList.add("open");
   $("modal-close").onclick = closeModal;
   for (const btn of $("modal-card").querySelectorAll(".opt")) {
@@ -444,6 +507,7 @@ $("board").onclick = (ev) => {
   if (!tile) return;
   modalEntity = entities().find(e => e.kind === tile.dataset.kind && e.id === tile.dataset.id) || null;
   renderModal();
+  if (modalEntity) fetchMacros(modalEntity);
 };
 $("modal").onclick = (ev) => { if (ev.target === $("modal")) closeModal(); };
 document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeModal(); });
