@@ -22,6 +22,9 @@ npx wrangler secret put GEMINI_API_KEYS
 
 npx wrangler secret put TEAM_TOKEN
 # invent a long random string, e.g. from:  [guid]::NewGuid().ToString("N")
+
+npx wrangler secret put VIP_TOKEN
+# optional: a second accepted code — tier-list votes cast with it weigh 3x
 ```
 
 ## 3. Deploy

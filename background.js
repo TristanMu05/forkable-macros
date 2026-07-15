@@ -371,7 +371,7 @@ function notifyProgress(tabId, payload) {
 // while — saves ~150 KV reads per page load across the whole team.
 const BATCH_VALIDATED_TTL_MS = 12 * 60 * 60 * 1000;
 
-async function runBatch(items, sig, tabId) {
+async function runBatch(items, sig, tabId, menuDate) {
   try {
     if (serverMode()) {
       const { batchValidated } = await chrome.storage.local.get("batchValidated");
@@ -391,7 +391,9 @@ async function runBatch(items, sig, tabId) {
     let pending = items;
     if (serverMode()) {
       try {
-        const data = await serverPost("/bulk", { items });
+        // menuDate rides along so the server can record which restaurants
+        // are available on the day whose menu this is.
+        const data = await serverPost("/bulk", { items, menuDate });
         const results = data.results || [];
         const missing = [];
         await Promise.all(
@@ -438,7 +440,7 @@ async function runBatch(items, sig, tabId) {
           let results;
           let stalled = false;
           if (serverMode()) {
-            const data = await serverPost("/batch", { items: chunk });
+            const data = await serverPost("/batch", { items: chunk, menuDate });
             results = data.results || [];
             stalled = !!data.stalled;
           } else {
@@ -517,13 +519,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true; // async response
   }
   if (msg.type === "MACRO_BATCH") {
-    const sig = msg.items
-      .map((i) => `${i.restaurant}|${i.name}`)
-      .sort()
-      .join(";");
+    // The date is part of the signature: the same menu browsed for a
+    // different delivery day must still hit the server (availability).
+    const sig =
+      (msg.menuDate || "") + "|" +
+      msg.items.map((i) => `${i.restaurant}|${i.name}`).sort().join(";");
     if (runningBatchSig !== sig) {
       runningBatchSig = sig;
-      runBatch(msg.items, sig, _sender.tab?.id);
+      runBatch(msg.items, sig, _sender.tab?.id, msg.menuDate);
     }
     sendResponse({ ok: true });
   }

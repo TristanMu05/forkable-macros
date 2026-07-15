@@ -40,6 +40,12 @@
     border-radius: 999px; padding: 8px 12px; cursor: pointer; font-size: 13px;
   }
   #refresh:hover { color: var(--text); border-color: var(--accent); }
+  #days { padding-top: 0; margin-top: -6px; }
+  .day {
+    background: var(--tile); color: var(--muted); border: 1px solid var(--tile-border);
+    padding: 6px 12px; border-radius: 999px; font-size: 12px; cursor: pointer;
+  }
+  .day.active { background: var(--teal); border-color: var(--teal); color: #123; font-weight: 700; }
 
   #board { padding: 0 20px 30px; display: flex; flex-direction: column; gap: 8px; }
   .row { display: flex; border-radius: 10px; overflow: hidden; background: var(--panel); }
@@ -129,6 +135,8 @@
   <button id="refresh" title="Reload votes">↻ Refresh</button>
 </div>
 
+<div class="controls" id="days" style="display:none"></div>
+
 <div id="board"></div>
 
 <footer>
@@ -137,6 +145,10 @@
   so one S vote and one 💩 vote average out to C, but two S votes against one 💩 pull
   it up to B. Votes aren't permanent: change yours anytime, or remove it by tapping
   your current pick again. Fresh votes can take a minute or two to show up for everyone else.
+  <br><br>
+  <b>Day filter:</b> which restaurants are orderable on which day is crowdsourced from
+  the team browsing Forkable menus (via the macros extension) and resets every Saturday —
+  days appear up top as soon as someone has browsed that day's menu.
 </footer>
 
 <div class="overlay" id="modal"><div class="card" id="modal-card"></div></div>
@@ -175,9 +187,11 @@ let token = localStorage.getItem("fkm_token") || "";
 const voter = localStorage.getItem("fkm_voter") ||
   (localStorage.setItem("fkm_voter", crypto.randomUUID()), localStorage.getItem("fkm_voter"));
 
-let data = null;          // {items, restaurants, votes, ts} from the worker
+let data = null;          // {items, restaurants, votes, availability, ts} from the worker
 let tab = "r";            // "r" restaurants | "i" items
 let filter = "";
+let day = null;           // "YYYY-MM-DD" or null = whole week
+let myWeight = 1;         // 3 for the VIP code — the server decides
 let lastLoad = 0;
 let modalEntity = null;
 
@@ -205,24 +219,24 @@ function aggregate() {
     if (!agg.has(key)) agg.set(key, { counts: Object.fromEntries(TIERS.map(t => [t.key, 0])), total: 0, mine: null });
     return agg.get(key);
   };
-  const perVoter = new Map(); // "kind:id" -> Map(voter -> tier)
+  const perVoter = new Map(); // "kind:id" -> Map(voter -> {tier, w})
   for (const v of data.votes) {
     const key = v.kind + ":" + v.id;
     if (!perVoter.has(key)) perVoter.set(key, new Map());
-    perVoter.get(key).set(v.voter, v.tier);
+    perVoter.get(key).set(v.voter, { tier: v.tier, w: v.w || 1 });
   }
   const my = loadMyVotes();
   for (const [key, entry] of Object.entries(my)) {
     if (!perVoter.has(key)) perVoter.set(key, new Map());
     if (entry.tier === null) perVoter.get(key).delete(voter);
-    else perVoter.get(key).set(voter, entry.tier);
+    else perVoter.get(key).set(voter, { tier: entry.tier, w: myWeight });
   }
   for (const [key, voters] of perVoter) {
     const a = ensure(key);
-    for (const [who, tier] of voters) {
-      if (!(tier in SCORE)) continue;
-      a.counts[tier]++; a.total++;
-      if (who === voter) a.mine = tier;
+    for (const [who, v] of voters) {
+      if (!(v.tier in SCORE)) continue;
+      a.counts[v.tier] += v.w; a.total += v.w;
+      if (who === voter) a.mine = v.tier;
     }
   }
   return agg;
@@ -247,12 +261,34 @@ function entities() {
   return data.restaurants.map(name => ({ kind: "r", id: name, name, sub: "" }));
 }
 
+function renderDays() {
+  const el = $("days");
+  const days = Object.keys(data.availability || {}).sort();
+  if (day && !days.includes(day)) day = null; // week rolled over
+  el.style.display = days.length ? "flex" : "none";
+  if (!days.length) return;
+  const label = (d) =>
+    new Date(d + "T00:00:00Z").toLocaleDateString("en-US",
+      { weekday: "short", month: "numeric", day: "numeric", timeZone: "UTC" });
+  el.innerHTML =
+    `<button class="day${day === null ? " active" : ""}" data-day="">📅 All week</button>` +
+    days.map(d =>
+      `<button class="day${day === d ? " active" : ""}" data-day="${d}">${label(d)}</button>`
+    ).join("");
+}
+
 function renderBoard() {
   const board = $("board");
   if (!data) { board.innerHTML = ""; return; }
+  renderDays();
   const agg = aggregate();
+  // Day filter: only restaurants seen on that day's menu (items via their
+  // restaurant). Availability names and entity names share the same
+  // lowercased normalization, so plain Set membership works.
+  const avail = day && data.availability?.[day] ? new Set(data.availability[day]) : null;
   const list = entities().filter(e =>
-    !filter || (e.name + " " + e.sub).toLowerCase().includes(filter));
+    (!filter || (e.name + " " + e.sub).toLowerCase().includes(filter)) &&
+    (!avail || avail.has(e.kind === "r" ? e.name : e.sub)));
   const rows = TIERS.map(() => []);
   for (const e of list) rows[placement(aggFor(agg, e))].push(e);
 
@@ -264,7 +300,8 @@ function renderBoard() {
   if (!list.length) {
     board.innerHTML = `<div class="empty-note">${
       filter ? "Nothing matches that filter."
-             : "Nothing here yet — items appear as the team browses Forkable menus."}</div>`;
+      : day ? "Nothing recorded for that day yet — availability fills in as people browse menus."
+      : "Nothing here yet — items appear as the team browses Forkable menus."}</div>`;
     return;
   }
   board.innerHTML = TIERS.map((t, i) => {
@@ -327,7 +364,7 @@ async function loadData() {
     }
     const d = await r.json();
     if (!d.ok) throw new Error(d.error || "Bad response");
-    data = d; lastLoad = Date.now();
+    data = d; myWeight = d.voteWeight || 1; lastLoad = Date.now();
     renderBoard();
     if (modalEntity) renderModal();
   } catch (err) {
@@ -376,6 +413,12 @@ function submitToken() {
 // --- wiring -----------------------------------------------------------------
 $("tab-r").onclick = () => { tab = "r"; renderBoard(); };
 $("tab-i").onclick = () => { tab = "i"; renderBoard(); };
+$("days").onclick = (ev) => {
+  const chip = ev.target.closest(".day");
+  if (!chip) return;
+  day = chip.dataset.day || null;
+  renderBoard();
+};
 $("filter").oninput = (ev) => { filter = ev.target.value.trim().toLowerCase(); renderBoard(); };
 $("refresh").onclick = loadData;
 $("gate-go").onclick = submitToken;

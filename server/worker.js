@@ -5,14 +5,18 @@
 //  - every dish is estimated ONCE globally, then served from KV to everyone
 //
 // Endpoints (all require `x-team-token` header or `?token=`):
-//   POST /batch  {items:[{restaurant,name,description}]}   (≤60 items)
+//   POST /batch  {items:[{restaurant,name,description}], menuDate?}  (≤60)
 //       → {ok, results:[{...}|null per item]}   estimates uncached items
 //   POST /lookup {item:{restaurant,name,description,options?}, refine?:bool}
 //       → {ok, result:{...}, approx?:bool}
-//   POST /bulk   {items:[...]} (≤300)  → cached results only, no estimation
-//   GET  /tier/data            → {ok, items, restaurants, votes, ts}
-//       (60s KV snapshot; ?fresh=1 forces a rebuild)
+//   POST /bulk   {items:[...], menuDate?} (≤300) → cached results only
+//   GET  /tier/data → {ok, voteWeight, items, restaurants, votes,
+//       availability, weekStart, ts}   (60s KV snapshot; ?fresh=1 rebuilds)
 //   POST /tier/vote {kind:"item"|"restaurant", id, tier|null, voter}
+//
+// menuDate (YYYY-MM-DD, the delivery day being browsed) feeds per-day
+// restaurant availability. Auth also accepts the optional VIP_TOKEN secret,
+// whose votes carry 3x weight.
 //   POST /admin/persist-cache  → strips the legacy 7d TTL off old entries
 //   GET  /cache?token=…        → HTML cache viewer (&format=json for raw)
 //
@@ -24,8 +28,6 @@
 // more frequent and run on the cheaper 2.5 family. Unavailable or overloaded
 // models fall through to the next tier automatically via pool parking.
 const BATCH_MODELS = [
-  "gemini-3.5-flash",
-  "gemini-3-flash-preview",
   "gemini-2.5-flash",
   "gemini-2.5-flash-lite",
 ];
@@ -280,6 +282,7 @@ const json = (obj, status = 200) =>
 async function handleBatch(env, body) {
   const items = (body.items || []).slice(0, 60);
   if (!items.length) return json({ ok: false, error: "No items." }, 400);
+  await recordAvailability(env, body.menuDate, items);
 
   const results = await Promise.all(
     items.map((it) => env.MACROS.get(cacheKey(it.restaurant, it.name, null), "json"))
@@ -319,6 +322,7 @@ async function handleBatch(env, body) {
 async function handleBulk(env, body) {
   const items = (body.items || []).slice(0, 300);
   if (!items.length) return json({ ok: false, error: "No items." }, 400);
+  await recordAvailability(env, body.menuDate, items);
   const results = await Promise.all(
     items.map((it) =>
       it?.name
@@ -357,6 +361,52 @@ async function handleLookup(env, body) {
         : err.message;
     return json({ ok: false, error: msg }, 502);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Restaurant availability by day, crowdsourced from menu browsing: the
+// extension stamps every /bulk and /batch upload with the delivery date whose
+// menu it scraped, and the restaurant names get unioned into one small KV
+// entry per date (avail:YYYY-MM-DD). The tier page shows the current
+// Saturday-to-Friday week — so the day filter "resets" every Saturday —
+// and older entries just stop being read.
+// ---------------------------------------------------------------------------
+const normName = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+
+const laToday = () =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
+
+function addDays(ymd, n) {
+  const d = new Date(ymd + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+function weekDates() {
+  // Saturday-anchored week containing today (LA time): Sat..Fri
+  const today = laToday();
+  const sinceSat = (new Date(today + "T00:00:00Z").getUTCDay() + 1) % 7;
+  const start = addDays(today, -sinceSat);
+  return Array.from({ length: 7 }, (_, i) => addDays(start, i));
+}
+
+function validMenuDate(s) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s || "")) return null;
+  const t = new Date(s + "T00:00:00Z").getTime();
+  // Sanity window: a mis-scraped date would pollute a KV key forever.
+  return !Number.isNaN(t) && Math.abs(t - Date.now()) < 21 * 86400_000 ? s : null;
+}
+
+async function recordAvailability(env, menuDate, items) {
+  const date = validMenuDate(menuDate);
+  if (!date) return;
+  const names = new Set(items.map((it) => normName(it?.restaurant)).filter(Boolean));
+  if (!names.size) return;
+  const key = "avail:" + date;
+  const existing = (await env.MACROS.get(key, "json")) || [];
+  const merged = new Set([...existing, ...names]);
+  if (merged.size === existing.length) return; // nothing new — save the write
+  await env.MACROS.put(key, JSON.stringify([...merged].sort()));
 }
 
 // ---------------------------------------------------------------------------
@@ -419,25 +469,41 @@ async function buildTierData(env) {
     const tier = k.metadata?.t;
     if (!m || !TIERS.includes(tier)) continue;
     try {
-      votes.push({ kind: m[1], id: unb64u(m[2]), voter: m[3], tier });
+      votes.push({
+        kind: m[1], id: unb64u(m[2]), voter: m[3], tier,
+        w: Number(k.metadata?.w) || 1,
+      });
     } catch {}
   }
-  return { items, restaurants: [...restaurants].sort(), votes, ts: Date.now() };
+
+  const week = weekDates();
+  const availability = {};
+  await Promise.all(
+    week.map(async (date) => {
+      const names = await env.MACROS.get("avail:" + date, "json");
+      if (names?.length) availability[date] = names;
+    })
+  );
+
+  return {
+    items, restaurants: [...restaurants].sort(), votes,
+    availability, weekStart: week[0], ts: Date.now(),
+  };
 }
 
-async function handleTierData(env, url) {
+async function handleTierData(env, url, voteWeight) {
   if (url.searchParams.get("fresh") !== "1") {
     const snap = await env.MACROS.get(SNAPSHOT_KEY, "json");
     if (snap && Date.now() - snap.ts < SNAPSHOT_FRESH_MS) {
-      return json({ ok: true, ...snap });
+      return json({ ok: true, voteWeight, ...snap });
     }
   }
   const data = await buildTierData(env);
   await env.MACROS.put(SNAPSHOT_KEY, JSON.stringify(data));
-  return json({ ok: true, ...data });
+  return json({ ok: true, voteWeight, ...data });
 }
 
-async function handleTierVote(env, body) {
+async function handleTierVote(env, body, weight) {
   const kind =
     body.kind === "restaurant" ? "r" : body.kind === "item" ? "i" : null;
   const id = typeof body.id === "string" ? body.id.slice(0, 300) : "";
@@ -452,7 +518,7 @@ async function handleTierVote(env, body) {
   }
   const key = `vote:${kind}:${b64u(id)}:${voter}`;
   if (tier === null) await env.MACROS.delete(key);
-  else await env.MACROS.put(key, tier, { metadata: { t: tier } });
+  else await env.MACROS.put(key, tier, { metadata: { t: tier, w: weight } });
   // The tierSnapshot is deliberately NOT invalidated here — see the note above.
   return json({ ok: true });
 }
@@ -555,14 +621,17 @@ export default {
     const url = new URL(request.url);
     const token =
       request.headers.get("x-team-token") || url.searchParams.get("token");
-    if (token !== env.TEAM_TOKEN) {
+    // VIP_TOKEN (optional secret) is a second valid code whose votes weigh 3x.
+    const isVip = !!env.VIP_TOKEN && token === env.VIP_TOKEN;
+    if (token !== env.TEAM_TOKEN && !isVip) {
       return json({ ok: false, error: "Unauthorized." }, 401);
     }
+    const voteWeight = isVip ? 3 : 1;
     if (request.method === "GET" && url.pathname === "/cache") {
       return handleCacheView(env, url);
     }
     if (request.method === "GET" && url.pathname === "/tier/data") {
-      return handleTierData(env, url);
+      return handleTierData(env, url, voteWeight);
     }
     if (request.method !== "POST") return json({ ok: false, error: "POST only." }, 405);
     // Tolerate empty bodies (e.g. bare POST /admin/persist-cache) — every
@@ -571,7 +640,7 @@ export default {
     if (url.pathname === "/batch") return handleBatch(env, body);
     if (url.pathname === "/bulk") return handleBulk(env, body);
     if (url.pathname === "/lookup") return handleLookup(env, body);
-    if (url.pathname === "/tier/vote") return handleTierVote(env, body);
+    if (url.pathname === "/tier/vote") return handleTierVote(env, body, voteWeight);
     if (url.pathname === "/admin/persist-cache") return handlePersistCache(env);
     return json({ ok: false, error: "Not found." }, 404);
   },

@@ -355,15 +355,79 @@ setInterval(() => {
 // ---------------------------------------------------------------------------
 let lastBatchSig = null;
 
+// The browse modal belongs to one delivery day; find its date so the server
+// can track which restaurants are available on which weekday. Header-ish
+// elements are trusted with bare "July 15" / "7/15" / "today" forms; the
+// modal body only with an unambiguous "Tuesday, July 15" form (dish
+// descriptions can contain stray numbers and the word "today").
+const FKM_MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+const FKM_MONTH_DAY = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b/i;
+const FKM_WEEKDAY_MONTH_DAY = /\b(?:sun|mon|tues?|wednes|thurs?|fri|satur)day\s*,?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b/i;
+const FKM_NUMERIC_DATE = /\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/;
+
+function fkmYmd(d) {
+  return (
+    d.getFullYear() + "-" +
+    String(d.getMonth() + 1).padStart(2, "0") + "-" +
+    String(d.getDate()).padStart(2, "0")
+  );
+}
+
+// Menus are only browsable a couple of weeks out — reject anything else
+// (it's likelier a mis-scrape than a real delivery day), and use the same
+// window to pick the year, which Forkable's UI omits.
+function fkmBuildDate(month, day, year) {
+  const now = new Date();
+  const candidates = year != null
+    ? [new Date(year < 100 ? 2000 + year : year, month, day)]
+    : [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1].map(
+        (y) => new Date(y, month, day)
+      );
+  for (const d of candidates) {
+    if (d.getMonth() === month && Math.abs(d - now) < 21 * 86400_000) return fkmYmd(d);
+  }
+  return null;
+}
+
+function extractMenuDate(modal) {
+  const headerText = cleanText(
+    Array.from(
+      modal.querySelectorAll(
+        ".modal-header, .modal-title, header, h1, h2, h3, .back-button"
+      )
+    ).map((el) => el.textContent).join(" | ")
+  );
+  let m;
+  if ((m = headerText.match(FKM_MONTH_DAY))) {
+    return fkmBuildDate(FKM_MONTHS[m[1].slice(0, 3).toLowerCase()], +m[2]);
+  }
+  if ((m = headerText.match(FKM_NUMERIC_DATE))) {
+    return fkmBuildDate(+m[1] - 1, +m[2], m[3] ? +m[3] : null);
+  }
+  if (/\btoday\b/i.test(headerText)) return fkmYmd(new Date());
+  if (/\btomorrow\b/i.test(headerText)) return fkmYmd(new Date(Date.now() + 86400_000));
+  const bodyText = cleanText(modal.textContent).slice(0, 1000);
+  if ((m = bodyText.match(FKM_WEEKDAY_MONTH_DAY))) {
+    return fkmBuildDate(FKM_MONTHS[m[1].slice(0, 3).toLowerCase()], +m[2]);
+  }
+  return null;
+}
+
 function maybeBatchMenu(modal) {
   const items = extractMenuItems(modal);
   if (items.length < 3) return;
-  const sig = items.map((i) => `${i.restaurant}|${i.name}`).sort().join(";");
+  const menuDate = extractMenuDate(modal);
+  // Same menu browsed for a DIFFERENT day must re-send (availability!),
+  // so the date is part of the dedupe signature.
+  const sig =
+    (menuDate || "") + "|" +
+    items.map((i) => `${i.restaurant}|${i.name}`).sort().join(";");
   if (sig === lastBatchSig) return;
   lastBatchSig = sig;
   if (!chrome.runtime?.id) return;
+  console.debug("[fkm] menu batch:", items.length, "items, day:", menuDate || "not found");
   try {
-    chrome.runtime.sendMessage({ type: "MACRO_BATCH", items });
+    chrome.runtime.sendMessage({ type: "MACRO_BATCH", items, menuDate });
   } catch {}
 }
 
