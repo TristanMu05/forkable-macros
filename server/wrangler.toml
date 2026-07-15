@@ -1,0 +1,9 @@
+name = "forkable-macros"
+main = "worker.js"
+compatibility_date = "2026-06-01"
+
+# Create the namespace first:  npx wrangler kv namespace create MACROS
+# then paste the id it prints below.
+[[kv_namespaces]]
+binding = "MACROS"
+id = "67f5c75b49e942469d14f0b670c9fbd0"

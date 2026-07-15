@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apex Eats — Tier Lists</title>
+<style>
+  :root {
+    --bg: #1e1733; --panel: #261d44; --tile: #2b2150; --tile-border: #453575;
+    --text: #f0edf7; --muted: #9b8fc4; --accent: #8b5cf6; --teal: #2ed3b7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 16px 20px 12px;
+  }
+  header img { width: 34px; height: 34px; border-radius: 8px; }
+  header h1 { font-size: 19px; }
+  header .tag { color: var(--muted); font-size: 12px; width: 100%; margin-top: -6px; }
+  .controls {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    padding: 0 20px 14px;
+  }
+  .tab {
+    background: var(--tile); color: var(--text); border: 1px solid var(--tile-border);
+    padding: 8px 14px; border-radius: 999px; font-size: 13px; cursor: pointer;
+  }
+  .tab.active { background: var(--accent); border-color: var(--accent); font-weight: 600; }
+  #filter {
+    background: var(--tile); border: 1px solid var(--tile-border); color: var(--text);
+    padding: 8px 12px; border-radius: 999px; font-size: 13px; width: 180px;
+  }
+  #filter::placeholder { color: var(--muted); }
+  #refresh {
+    background: none; border: 1px solid var(--tile-border); color: var(--muted);
+    border-radius: 999px; padding: 8px 12px; cursor: pointer; font-size: 13px;
+  }
+  #refresh:hover { color: var(--text); border-color: var(--accent); }
+
+  #board { padding: 0 20px 30px; display: flex; flex-direction: column; gap: 8px; }
+  .row { display: flex; border-radius: 10px; overflow: hidden; background: var(--panel); }
+  .row-label {
+    flex: 0 0 86px; min-height: 64px; display: flex; align-items: center;
+    justify-content: center; text-align: center; font-weight: 800; font-size: 15px;
+    color: #241b3f; padding: 8px 4px;
+  }
+  .row-items {
+    flex: 1; display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; align-content: flex-start;
+  }
+  .tile {
+    background: var(--tile); border: 1px solid var(--tile-border); color: var(--text);
+    border-radius: 8px; padding: 7px 10px; font-size: 13px; cursor: pointer;
+    text-align: left; max-width: 240px; position: relative;
+  }
+  .tile:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .tile .sub { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .tile .n-votes {
+    display: inline-block; background: var(--accent); color: #fff; font-size: 10px;
+    font-weight: 700; border-radius: 999px; padding: 1px 6px; margin-left: 6px;
+    vertical-align: text-top;
+  }
+  .empty-note { color: var(--muted); font-size: 13px; padding: 30px 20px; text-align: center; }
+
+  footer { color: var(--muted); font-size: 12px; padding: 0 20px 40px; line-height: 1.6; max-width: 760px; }
+
+  /* modal + token gate */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(10, 6, 20, .72); display: none;
+    align-items: flex-start; justify-content: center; padding: 8vh 16px; z-index: 10;
+  }
+  .overlay.open { display: flex; }
+  .card {
+    background: var(--panel); border: 1px solid var(--tile-border); border-radius: 14px;
+    padding: 20px; width: 100%; max-width: 470px; max-height: 84vh; overflow-y: auto;
+  }
+  .card h2 { font-size: 17px; }
+  .card .sub { color: var(--muted); font-size: 12px; margin: 3px 0 14px; }
+  .card .close { float: right; background: none; border: none; color: var(--muted); font-size: 18px; cursor: pointer; }
+  .opt {
+    display: grid; grid-template-columns: 74px 1fr 52px; align-items: center; gap: 10px;
+    width: 100%; background: none; border: 1px solid transparent; border-radius: 10px;
+    padding: 6px; cursor: pointer; color: var(--text); margin-bottom: 4px;
+  }
+  .opt:hover { background: var(--tile); }
+  .opt.mine { border-color: var(--accent); background: var(--tile); }
+  .opt .chip {
+    border-radius: 7px; font-weight: 800; font-size: 13px; color: #241b3f;
+    padding: 7px 4px; text-align: center;
+  }
+  .opt .bar { background: var(--bg); border-radius: 999px; height: 10px; overflow: hidden; }
+  .opt .bar i { display: block; height: 100%; border-radius: 999px; }
+  .opt .count { font-size: 12px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+  .opt.mine .count { color: var(--text); font-weight: 700; }
+  .hint { color: var(--muted); font-size: 11.5px; margin-top: 12px; line-height: 1.5; }
+
+  #gate-card input {
+    width: 100%; background: var(--tile); border: 1px solid var(--tile-border); color: var(--text);
+    padding: 10px 12px; border-radius: 8px; font-size: 14px; margin: 12px 0;
+  }
+  #gate-card button.go {
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  #gate-err { color: #ff8a8a; font-size: 12px; min-height: 16px; }
+
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #3a2a63; border: 1px solid var(--accent); color: var(--text);
+    padding: 10px 16px; border-radius: 10px; font-size: 13px; display: none; z-index: 20;
+    max-width: 90vw;
+  }
+</style>
+</head>
+<body>
+<header>
+  <img src="logo.png" alt="" onerror="this.style.display='none'">
+  <h1>Apex Eats — Tier Lists</h1>
+  <div class="tag">Every restaurant and dish the team has ordered through Forkable. Click anything to vote.</div>
+</header>
+
+<div class="controls">
+  <button class="tab" id="tab-r">🍽 Restaurants</button>
+  <button class="tab" id="tab-i">🌮 Food Items</button>
+  <input id="filter" type="search" placeholder="Filter…">
+  <button id="refresh" title="Reload votes">↻ Refresh</button>
+</div>
+
+<div id="board"></div>
+
+<footer>
+  <b>How ranking works:</b> everything starts in C tier. An entry's placement is the
+  average of all its votes (💩 = 0 up to Willis ✨ = 7), rounded to the nearest tier —
+  so one S vote and one 💩 vote average out to C, but two S votes against one 💩 pull
+  it up to B. Votes aren't permanent: change yours anytime, or remove it by tapping
+  your current pick again. Fresh votes can take a minute or two to show up for everyone else.
+</footer>
+
+<div class="overlay" id="modal"><div class="card" id="modal-card"></div></div>
+
+<div class="overlay" id="gate">
+  <div class="card" id="gate-card">
+    <h2>Team token</h2>
+    <div class="sub">Enter the Apex team token to see the tier lists (same token the macros extension uses).</div>
+    <input id="gate-input" type="password" placeholder="team token" autocomplete="off">
+    <div id="gate-err"></div>
+    <button class="go" id="gate-go">Let me in</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+const WORKER_URL = "https://forkable-macros.apexforkable.workers.dev";
+
+// Top-to-bottom display order; score = 7 - index (Willis=7 … 💩=0).
+const TIERS = [
+  { key: "W", label: "Willis ✨", color: "linear-gradient(135deg,#ffe29a,#f6c85f 60%,#e8a33d)", flat: "#f6c85f" },
+  { key: "S", label: "S", color: "#ff7f7e", flat: "#ff7f7e" },
+  { key: "A", label: "A", color: "#ffbf7f", flat: "#ffbf7f" },
+  { key: "B", label: "B", color: "#ffdf80", flat: "#ffdf80" },
+  { key: "C", label: "C", color: "#ffff7f", flat: "#ffff7f" },
+  { key: "D", label: "D", color: "#bfff7f", flat: "#bfff7f" },
+  { key: "F", label: "F", color: "#7fbfff", flat: "#7fbfff" },
+  { key: "P", label: "💩", color: "#a9744f", flat: "#a9744f" },
+];
+const SCORE = Object.fromEntries(TIERS.map((t, i) => [t.key, 7 - i]));
+
+const $ = (id) => document.getElementById(id);
+let token = localStorage.getItem("fkm_token") || "";
+const voter = localStorage.getItem("fkm_voter") ||
+  (localStorage.setItem("fkm_voter", crypto.randomUUID()), localStorage.getItem("fkm_voter"));
+
+let data = null;          // {items, restaurants, votes, ts} from the worker
+let tab = "r";            // "r" restaurants | "i" items
+let filter = "";
+let lastLoad = 0;
+let modalEntity = null;
+
+// --- my votes overlay -------------------------------------------------------
+// The server snapshot lags ~1-2 min, so the caller's own votes are mirrored
+// locally and always win for their voter id. null = "I removed my vote".
+// Entries older than 10 min are pruned (the server is long consistent by then).
+function loadMyVotes() {
+  let m = {};
+  try { m = JSON.parse(localStorage.getItem("fkm_myvotes")) || {}; } catch {}
+  const cutoff = Date.now() - 10 * 60 * 1000;
+  for (const k of Object.keys(m)) if (m[k].ts < cutoff) delete m[k];
+  return m;
+}
+function setMyVote(key, tier) {
+  const m = loadMyVotes();
+  m[key] = { tier, ts: Date.now() };
+  localStorage.setItem("fkm_myvotes", JSON.stringify(m));
+}
+
+// --- aggregation ------------------------------------------------------------
+function aggregate() {
+  const agg = new Map(); // "kind:id" -> {counts, total, mine}
+  const ensure = (key) => {
+    if (!agg.has(key)) agg.set(key, { counts: Object.fromEntries(TIERS.map(t => [t.key, 0])), total: 0, mine: null });
+    return agg.get(key);
+  };
+  const perVoter = new Map(); // "kind:id" -> Map(voter -> tier)
+  for (const v of data.votes) {
+    const key = v.kind + ":" + v.id;
+    if (!perVoter.has(key)) perVoter.set(key, new Map());
+    perVoter.get(key).set(v.voter, v.tier);
+  }
+  const my = loadMyVotes();
+  for (const [key, entry] of Object.entries(my)) {
+    if (!perVoter.has(key)) perVoter.set(key, new Map());
+    if (entry.tier === null) perVoter.get(key).delete(voter);
+    else perVoter.get(key).set(voter, entry.tier);
+  }
+  for (const [key, voters] of perVoter) {
+    const a = ensure(key);
+    for (const [who, tier] of voters) {
+      if (!(tier in SCORE)) continue;
+      a.counts[tier]++; a.total++;
+      if (who === voter) a.mine = tier;
+    }
+  }
+  return agg;
+}
+const EMPTY = { counts: Object.fromEntries(TIERS.map(t => [t.key, 0])), total: 0, mine: null };
+const aggFor = (agg, e) => agg.get(e.kind + ":" + e.id) || EMPTY;
+
+function placement(a) { // -> index into TIERS
+  if (!a.total) return TIERS.findIndex(t => t.key === "C");
+  let sum = 0;
+  for (const t of TIERS) sum += SCORE[t.key] * a.counts[t.key];
+  return 7 - Math.max(0, Math.min(7, Math.round(sum / a.total)));
+}
+
+// --- rendering --------------------------------------------------------------
+const titleCase = (s) => String(s).split(" ").map(w => w ? w[0].toUpperCase() + w.slice(1) : w).join(" ");
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function entities() {
+  if (!data) return [];
+  if (tab === "i") return data.items.map(it => ({ kind: "i", id: it.id, name: it.name, sub: it.restaurant }));
+  return data.restaurants.map(name => ({ kind: "r", id: name, name, sub: "" }));
+}
+
+function renderBoard() {
+  const board = $("board");
+  if (!data) { board.innerHTML = ""; return; }
+  const agg = aggregate();
+  const list = entities().filter(e =>
+    !filter || (e.name + " " + e.sub).toLowerCase().includes(filter));
+  const rows = TIERS.map(() => []);
+  for (const e of list) rows[placement(aggFor(agg, e))].push(e);
+
+  $("tab-r").textContent = `🍽 Restaurants (${data.restaurants.length})`;
+  $("tab-i").textContent = `🌮 Food Items (${data.items.length})`;
+  $("tab-r").classList.toggle("active", tab === "r");
+  $("tab-i").classList.toggle("active", tab === "i");
+
+  if (!list.length) {
+    board.innerHTML = `<div class="empty-note">${
+      filter ? "Nothing matches that filter."
+             : "Nothing here yet — items appear as the team browses Forkable menus."}</div>`;
+    return;
+  }
+  board.innerHTML = TIERS.map((t, i) => {
+    rows[i].sort((a, b) => aggFor(agg, b).total - aggFor(agg, a).total || a.name.localeCompare(b.name));
+    const tiles = rows[i].map(e => {
+      const a = aggFor(agg, e);
+      return `<button class="tile" data-kind="${e.kind}" data-id="${esc(e.id)}">
+        ${esc(titleCase(e.name))}${a.total ? `<span class="n-votes" title="${a.total} vote${a.total > 1 ? "s" : ""}">${a.total}</span>` : ""}
+        ${e.sub ? `<span class="sub">${esc(titleCase(e.sub))}</span>` : ""}
+      </button>`;
+    }).join("");
+    return `<div class="row">
+      <div class="row-label" style="background:${t.color}">${t.label}</div>
+      <div class="row-items">${tiles}</div>
+    </div>`;
+  }).join("");
+}
+
+function renderModal() {
+  const e = modalEntity;
+  if (!e) { $("modal").classList.remove("open"); return; }
+  const a = aggFor(aggregate(), e);
+  const max = Math.max(1, ...TIERS.map(t => a.counts[t.key]));
+  $("modal-card").innerHTML = `
+    <button class="close" id="modal-close">✕</button>
+    <h2>${esc(titleCase(e.name))}</h2>
+    <div class="sub">${e.sub ? esc(titleCase(e.sub)) + " · " : ""}${a.total} vote${a.total === 1 ? "" : "s"} so far</div>
+    ${TIERS.map(t => `
+      <button class="opt${a.mine === t.key ? " mine" : ""}" data-tier="${t.key}">
+        <span class="chip" style="background:${t.color}">${t.label}</span>
+        <span class="bar"><i style="width:${(a.counts[t.key] / max) * 100}%;background:${t.flat}"></i></span>
+        <span class="count">${a.counts[t.key]}${a.mine === t.key ? " ✓" : ""}</span>
+      </button>`).join("")}
+    <div class="hint">Tap a tier to cast your vote — tap your current pick again to remove it.
+    You can change your vote anytime; placement follows the average.</div>`;
+  $("modal").classList.add("open");
+  $("modal-close").onclick = closeModal;
+  for (const btn of $("modal-card").querySelectorAll(".opt")) {
+    btn.onclick = () => castVote(e, btn.dataset.tier === a.mine ? null : btn.dataset.tier);
+  }
+}
+function closeModal() { modalEntity = null; $("modal").classList.remove("open"); }
+
+let toastTimer;
+function toast(msg) {
+  const el = $("toast");
+  el.textContent = msg; el.style.display = "block";
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.style.display = "none"; }, 4500);
+}
+
+// --- server -----------------------------------------------------------------
+async function loadData() {
+  try {
+    const r = await fetch(WORKER_URL + "/tier/data", { headers: { "x-team-token": token } });
+    if (r.status === 401) {
+      localStorage.removeItem("fkm_token"); token = "";
+      showGate("That token was rejected — check it and try again.");
+      return;
+    }
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || "Bad response");
+    data = d; lastLoad = Date.now();
+    renderBoard();
+    if (modalEntity) renderModal();
+  } catch (err) {
+    toast("Couldn't load tier data: " + err.message);
+  }
+}
+
+async function castVote(entity, tier) {
+  const key = entity.kind + ":" + entity.id;
+  const prev = aggFor(aggregate(), entity).mine;
+  setMyVote(key, tier);
+  renderBoard(); renderModal();
+  try {
+    const r = await fetch(WORKER_URL + "/tier/vote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-team-token": token },
+      body: JSON.stringify({
+        kind: entity.kind === "i" ? "item" : "restaurant",
+        id: entity.id, tier, voter,
+      }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.ok === false) throw new Error(d.error || "HTTP " + r.status);
+  } catch (err) {
+    setMyVote(key, prev);
+    renderBoard(); renderModal();
+    toast("Vote didn't save: " + err.message);
+  }
+}
+
+// --- token gate -------------------------------------------------------------
+function showGate(err) {
+  $("gate-err").textContent = err || "";
+  $("gate").classList.add("open");
+  $("gate-input").focus();
+}
+function submitToken() {
+  const v = $("gate-input").value.trim();
+  if (!v) return;
+  token = v;
+  localStorage.setItem("fkm_token", v);
+  $("gate").classList.remove("open");
+  loadData();
+}
+
+// --- wiring -----------------------------------------------------------------
+$("tab-r").onclick = () => { tab = "r"; renderBoard(); };
+$("tab-i").onclick = () => { tab = "i"; renderBoard(); };
+$("filter").oninput = (ev) => { filter = ev.target.value.trim().toLowerCase(); renderBoard(); };
+$("refresh").onclick = loadData;
+$("gate-go").onclick = submitToken;
+$("gate-input").onkeydown = (ev) => { if (ev.key === "Enter") submitToken(); };
+$("board").onclick = (ev) => {
+  const tile = ev.target.closest(".tile");
+  if (!tile) return;
+  modalEntity = entities().find(e => e.kind === tile.dataset.kind && e.id === tile.dataset.id) || null;
+  renderModal();
+};
+$("modal").onclick = (ev) => { if (ev.target === $("modal")) closeModal(); };
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeModal(); });
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && token && Date.now() - lastLoad > 60_000) loadData();
+});
+
+if (token) loadData(); else showGate();
+</script>
+</body>
+</html>

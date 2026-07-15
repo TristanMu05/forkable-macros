@@ -1,0 +1,8 @@
+# Team secrets — never commit (public repo)
+config.local.js
+
+# Local Claude Code settings (contain the team token in permission strings)
+.claude/
+
+# Built zips — they have config.local.js / old tokens baked in
+dist/

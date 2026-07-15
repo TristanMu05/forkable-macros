@@ -1,0 +1,353 @@
+/* Dark theme matching Forkable's deep-purple look */
+
+#fkm-panel {
+  position: fixed;
+  top: 0;
+  right: -340px;
+  width: 320px;
+  height: 100vh;
+  background: #1e1733;
+  border-left: 1px solid #372b5a;
+  box-shadow: -6px 0 24px rgba(0, 0, 0, 0.55);
+  z-index: 2147483647;
+  display: flex;
+  flex-direction: column;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  color: #f0edf7;
+  transition: right 0.25s ease;
+}
+
+#fkm-panel.fkm-open {
+  right: 0;
+}
+
+/* While the panel is open, compress the page into the remaining width
+   instead of overlaying it. Normal-flow content shifts via body margin;
+   Forkable's modal is position:fixed, so it needs its own width cap. */
+html.fkm-page-shift body {
+  margin-right: 320px !important;
+}
+
+html.fkm-page-shift .modal {
+  width: calc(100vw - 320px) !important;
+}
+
+.fkm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid #372b5a;
+}
+
+.fkm-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 16px;
+  color: #ffffff;
+}
+
+.fkm-logo {
+  height: 22px;
+  width: 22px;
+  border-radius: 5px;
+}
+
+.fkm-close {
+  background: none;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: #9b8fc4;
+  padding: 0 4px;
+}
+
+.fkm-close:hover {
+  color: #ffffff;
+}
+
+.fkm-search {
+  padding: 10px 16px;
+  border-bottom: 1px solid #372b5a;
+}
+
+.fkm-query {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid #443766;
+  border-radius: 8px;
+  font-size: 13px;
+  background: #2a2147;
+  color: #f0edf7;
+}
+
+.fkm-query::placeholder {
+  color: #9b8fc4;
+}
+
+.fkm-query:focus {
+  outline: none;
+  border-color: #8b5cf6;
+}
+
+.fkm-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+}
+
+.fkm-status {
+  color: #b6abdb;
+  padding: 12px 0;
+}
+
+.fkm-error {
+  color: #ff8a9b;
+}
+
+.fkm-card {
+  border: 1px solid #3a2f63;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 10px;
+  background: #261d44;
+}
+
+.fkm-card.fkm-best {
+  border-color: #8b5cf6;
+  background: #2b2150;
+}
+
+.fkm-food-name {
+  font-weight: 600;
+  margin-bottom: 2px;
+  color: #ffffff;
+}
+
+.fkm-brand {
+  font-weight: 400;
+  color: #9b8fc4;
+}
+
+.fkm-serving {
+  color: #9b8fc4;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.fkm-macros {
+  display: flex;
+  gap: 8px;
+}
+
+.fkm-macro {
+  flex: 1;
+  text-align: center;
+  background: #332a52;
+  border-radius: 8px;
+  padding: 6px 2px;
+}
+
+.fkm-macro .fkm-num {
+  display: block;
+  font-weight: 700;
+  font-size: 14px;
+  color: #ffffff;
+}
+
+.fkm-macro .fkm-label {
+  display: block;
+  font-size: 10px;
+  color: #9b8fc4;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fkm-protein {
+  background: #1f3050;
+}
+
+.fkm-protein .fkm-label {
+  color: #7fb3ff;
+}
+
+.fkm-carbs {
+  background: #3d3022;
+}
+
+.fkm-carbs .fkm-label {
+  color: #ffc875;
+}
+
+.fkm-fat {
+  background: #3d2230;
+}
+
+.fkm-fat .fkm-label {
+  color: #ff9db4;
+}
+
+.fkm-confidence {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.fkm-conf-high {
+  background: #1d3a2b;
+  color: #4fdc8b;
+}
+
+.fkm-conf-medium {
+  background: #3d3022;
+  color: #ffc875;
+}
+
+.fkm-conf-low {
+  background: #3d2230;
+  color: #ff8a9b;
+}
+
+.fkm-source {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #d6cdef;
+  font-weight: 600;
+}
+
+.fkm-notes {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #9b8fc4;
+  line-height: 1.4;
+}
+
+.fkm-refine {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 999px;
+  background: #8b5cf6;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fkm-refine:hover {
+  background: #9d73ff;
+}
+
+.fkm-links {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #3a2f63;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.fkm-links a {
+  color: #b79bff;
+  text-decoration: none;
+}
+
+.fkm-links a:hover {
+  text-decoration: underline;
+  color: #d4c2ff;
+}
+
+#fkm-progress {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+  width: 260px;
+  background: #261d44;
+  border: 1px solid #3a2f63;
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  padding: 10px 12px;
+  z-index: 2147483647;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+#fkm-progress.fkm-show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.fkm-progress-label {
+  font-size: 12px;
+  color: #f0edf7;
+  margin-bottom: 6px;
+}
+
+.fkm-progress-track {
+  height: 6px;
+  background: #382c5e;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.fkm-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: #2ed3b7;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+/* shimmer sweep while a batch chunk is in flight, so it never looks frozen */
+#fkm-progress.fkm-working .fkm-progress-fill {
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.45) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  background-color: #2ed3b7;
+  background-size: 80px 100%;
+  background-repeat: no-repeat;
+  animation: fkm-shimmer 1.4s infinite linear;
+}
+
+@keyframes fkm-shimmer {
+  from {
+    background-position: -80px 0;
+  }
+  to {
+    background-position: 320px 0;
+  }
+}
+
+.fkm-progress-note {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #9b8fc4;
+  line-height: 1.35;
+}
+
+.fkm-footer {
+  padding: 8px 16px;
+  border-top: 1px solid #372b5a;
+  font-size: 11px;
+  color: #9b8fc4;
+}
+
+.fkm-footer a {
+  color: #9b8fc4;
+}

@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Forkable Macros",
+  "version": "0.9.1",
+  "description": "Estimates macros (calories, protein, carbs, fat) for Forkable menu items in a side panel, via Gemini with Search grounding.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://generativelanguage.googleapis.com/*",
+    "https://*.workers.dev/*"
+  ],
+  "icons": {
+    "128": "icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.forkable.com/*"],
+      "js": ["content.js"],
+      "css": ["panel.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["logo.png"],
+      "matches": ["https://*.forkable.com/*"]
+    }
+  ]
+}
