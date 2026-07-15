@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Forkable Macros",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "Estimates macros (calories, protein, carbs, fat) for Forkable menu items in a side panel, via Gemini with Search grounding.",
   "permissions": ["storage"],
   "host_permissions": [

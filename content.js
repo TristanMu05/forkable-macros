@@ -135,7 +135,7 @@ function getPanel() {
       <input type="text" class="fkm-query" placeholder="Estimate any food..." />
     </div>
     <div class="fkm-body"></div>
-    <div class="fkm-footer">Estimated by Gemini &mdash; may not be official nutrition data &middot; v${version}</div>
+    <div class="fkm-footer">Estimated by Gemini, may not be official nutrition data &middot; v${version}</div>
   `;
   document.documentElement.appendChild(panel);
 
@@ -192,7 +192,7 @@ function renderError(message) {
 function renderResult(item, r) {
   const approx = r.approx && item.options?.length;
   const configLine = approx
-    ? `<div class="fkm-serving">standard configuration &mdash; selected options not factored in</div>`
+    ? `<div class="fkm-serving">standard configuration (selected options not factored in)</div>`
     : item.options?.length
     ? `<div class="fkm-serving">with ${escapeHtml(item.options.join(", "))}</div>`
     : "";
@@ -255,7 +255,7 @@ function signatureOf(item) {
 function handleInvalidatedContext() {
   observer.disconnect();
   showPanel();
-  renderError("The extension was updated — refresh this page to reconnect.");
+  renderError("The extension was updated. Refresh this page to reconnect.");
 }
 
 function runLookup(item, refine) {
@@ -314,7 +314,7 @@ function updateProgress({ done, total, finished, stalled, working }) {
   const label = progressEl.querySelector(".fkm-progress-label");
   const note = progressEl.querySelector(".fkm-progress-note");
   if (stalled) {
-    label.textContent = `Macro estimation paused at ${done}/${total} — daily quota used up`;
+    label.textContent = `Macro estimation paused at ${done}/${total} (daily quota used up)`;
     note.textContent = "";
   } else if (isDone) {
     label.textContent = `Menu macros ready (${done}/${total})`;
@@ -322,8 +322,8 @@ function updateProgress({ done, total, finished, stalled, working }) {
   } else {
     label.textContent = `Estimating menu macros… ${done}/${total}`;
     note.textContent = working
-      ? "Crunching the next batch — new menus take a few minutes"
-      : "Runs in the background — feel free to keep browsing";
+      ? "Crunching the next batch. New menus take a few minutes"
+      : "Runs in the background, feel free to keep browsing";
   }
   progressEl.classList.add("fkm-show");
   clearTimeout(progressHideTimer);

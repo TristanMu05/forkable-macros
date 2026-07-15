@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Apex Eats — Tier Lists</title>
+<title>Apex Eats Tier Lists</title>
 <style>
   :root {
     --bg: #1e1733; --panel: #261d44; --tile: #2b2150; --tile-border: #453575;
@@ -126,7 +126,7 @@
 <body>
 <header>
   <img src="logo.png" alt="" onerror="this.style.display='none'">
-  <h1>Apex Eats — Tier Lists</h1>
+  <h1>Apex Eats Tier Lists</h1>
   <div class="tag">Every restaurant and dish the team has ordered through Forkable. Click anything to vote.</div>
 </header>
 
@@ -143,14 +143,14 @@
 
 <footer>
   <b>How ranking works:</b> everything starts in C tier. An entry's placement is the
-  average of all its votes (💩 = 0 up to Willis ✨ = 7), rounded to the nearest tier —
+  average of all its votes (💩 = 0 up to Willis ✨ = 7), rounded to the nearest tier,
   so one S vote and one 💩 vote average out to C, but two S votes against one 💩 pull
   it up to B. Votes aren't permanent: change yours anytime, or remove it by tapping
   your current pick again. Fresh votes can take a minute or two to show up for everyone else.
   <br><br>
   <b>Day filter:</b> which restaurants are orderable on which day is crowdsourced from
   the team browsing Forkable menus (via the macros extension) and resets every Saturday.
-  Monday–Friday are always shown; a dimmed day just has no data yet — it fills in a
+  Monday to Friday are always shown; a dimmed day just has no data yet. It fills in a
   minute or two after someone browses that day's menu.
 </footer>
 
@@ -316,8 +316,8 @@ function renderBoard() {
   if (!list.length) {
     board.innerHTML = `<div class="empty-note">${
       filter ? "Nothing matches that filter."
-      : day ? "Nothing recorded for that day yet — availability fills in as people browse menus."
-      : "Nothing here yet — items appear as the team browses Forkable menus."}</div>`;
+      : day ? "Nothing recorded for that day yet. Availability fills in as people browse menus."
+      : "Nothing here yet. Items appear as the team browses Forkable menus."}</div>`;
     return;
   }
   board.innerHTML = TIERS.map((t, i) => {
@@ -351,7 +351,7 @@ function renderModal() {
         <span class="bar"><i style="width:${(a.counts[t.key] / max) * 100}%;background:${t.flat}"></i></span>
         <span class="count">${a.counts[t.key]}${a.mine === t.key ? " ✓" : ""}</span>
       </button>`).join("")}
-    <div class="hint">Tap a tier to cast your vote — tap your current pick again to remove it.
+    <div class="hint">Tap a tier to cast your vote, or tap your current pick again to remove it.
     You can change your vote anytime; placement follows the average.</div>`;
   $("modal").classList.add("open");
   $("modal-close").onclick = closeModal;
@@ -375,7 +375,7 @@ async function loadData() {
     const r = await fetch(WORKER_URL + "/tier/data", { headers: { "x-team-token": token } });
     if (r.status === 401) {
       localStorage.removeItem("fkm_token"); token = "";
-      showGate("That token was rejected — check it and try again.");
+      showGate("That token was rejected. Check it and try again.");
       return;
     }
     const d = await r.json();

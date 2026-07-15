@@ -357,7 +357,7 @@ async function handleLookup(env, body) {
   } catch (err) {
     const msg =
       err.message === "RATE_LIMIT"
-        ? "All free-tier quota pools are used up for now — try again later."
+        ? "All free-tier quota pools are used up for now. Try again later."
         : err.message;
     return json({ ok: false, error: msg }, 502);
   }
@@ -581,7 +581,7 @@ async function handleCacheView(env, url) {
   const rows = entries
     .map(
       (e) => `<tr>
-        <td>${escHtml(e.restaurant) || "<i>—</i>"}</td>
+        <td>${escHtml(e.restaurant) || "<i>&middot;</i>"}</td>
         <td>${escHtml(e.name)}</td>
         <td>${e.options ? escHtml(e.options.join(", ")) : "<i>base</i>"}</td>
         <td class="n">${e.calories ?? ""}</td>
@@ -594,7 +594,7 @@ async function handleCacheView(env, url) {
     )
     .join("");
 
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Forkable Macros — cache</title>
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Forkable Macros cache</title>
 <style>
 body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#1e1733;color:#f0edf7;margin:24px}
 h1{font-size:18px} .meta{color:#9b8fc4;font-size:13px;margin-bottom:16px}
@@ -604,7 +604,7 @@ th{color:#b79bff;position:sticky;top:0;background:#1e1733}
 td.n{text-align:right;font-variant-numeric:tabular-nums}
 tr:hover{background:#261d44} i{color:#9b8fc4}
 </style></head><body>
-<h1>Forkable Macros — shared cache</h1>
+<h1>Forkable Macros shared cache</h1>
 <div class="meta">${entries.length} entries &middot; ${
     parked.length ? "parked pools: " + parked.join(", ") : "all quota pools healthy"
   }</div>

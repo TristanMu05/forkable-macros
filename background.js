@@ -234,7 +234,7 @@ async function parkDurationFor429(resp) {
 async function callGemini(promptText, useSearch) {
   if (!POOLS.length) {
     throw new Error(
-      "No API keys configured — set WORKER_URL for team mode, or add keys to GEMINI_API_KEYS."
+      "No API keys configured. Set WORKER_URL for team mode, or add keys to GEMINI_API_KEYS."
     );
   }
   const body = {
@@ -298,7 +298,7 @@ async function callGemini(promptText, useSearch) {
 function friendlyError(err) {
   if (err.message === "RATE_LIMIT") {
     return new Error(
-      "All free-tier quota pools are used up for now (each key+model allows ~20 requests/day). Cached items still work — quotas reset daily."
+      "All free-tier quota pools are used up for now (each key+model allows ~20 requests/day). Cached items still work; quotas reset daily."
     );
   }
   return err;
