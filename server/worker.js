@@ -565,12 +565,9 @@ export default {
       return handleTierData(env, url);
     }
     if (request.method !== "POST") return json({ ok: false, error: "POST only." }, 405);
-    let body;
-    try {
-      body = await request.json();
-    } catch {
-      return json({ ok: false, error: "Bad JSON." }, 400);
-    }
+    // Tolerate empty bodies (e.g. bare POST /admin/persist-cache) — every
+    // handler validates the fields it needs anyway.
+    const body = await request.json().catch(() => ({}));
     if (url.pathname === "/batch") return handleBatch(env, body);
     if (url.pathname === "/bulk") return handleBulk(env, body);
     if (url.pathname === "/lookup") return handleLookup(env, body);
