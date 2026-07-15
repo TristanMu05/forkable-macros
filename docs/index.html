@@ -46,6 +46,8 @@
     padding: 6px 12px; border-radius: 999px; font-size: 12px; cursor: pointer;
   }
   .day.active { background: var(--teal); border-color: var(--teal); color: #123; font-weight: 700; }
+  .day.nodata { opacity: .55; }
+  .day.nodata.active { opacity: 1; }
 
   #board { padding: 0 20px 30px; display: flex; flex-direction: column; gap: 8px; }
   .row { display: flex; border-radius: 10px; overflow: hidden; background: var(--panel); }
@@ -147,8 +149,9 @@
   your current pick again. Fresh votes can take a minute or two to show up for everyone else.
   <br><br>
   <b>Day filter:</b> which restaurants are orderable on which day is crowdsourced from
-  the team browsing Forkable menus (via the macros extension) and resets every Saturday —
-  days appear up top as soon as someone has browsed that day's menu.
+  the team browsing Forkable menus (via the macros extension) and resets every Saturday.
+  Monday–Friday are always shown; a dimmed day just has no data yet — it fills in a
+  minute or two after someone browses that day's menu.
 </footer>
 
 <div class="overlay" id="modal"><div class="card" id="modal-card"></div></div>
@@ -261,19 +264,32 @@ function entities() {
   return data.restaurants.map(name => ({ kind: "r", id: name, name, sub: "" }));
 }
 
+function addDaysYmd(ymd, n) {
+  const d = new Date(ymd + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
 function renderDays() {
   const el = $("days");
-  const days = Object.keys(data.availability || {}).sort();
-  if (day && !days.includes(day)) day = null; // week rolled over
-  el.style.display = days.length ? "flex" : "none";
-  if (!days.length) return;
+  const avail = data.availability || {};
+  // Mon–Fri of the current week are always offered (weekStart is Saturday);
+  // weekend days or stragglers only show up if they actually have data.
+  const days = new Set(Object.keys(avail));
+  if (data.weekStart) {
+    for (let i = 2; i <= 6; i++) days.add(addDaysYmd(data.weekStart, i));
+  }
+  const list = [...days].sort();
+  if (day && !list.includes(day)) day = null; // week rolled over
+  el.style.display = list.length ? "flex" : "none";
+  if (!list.length) return;
   const label = (d) =>
     new Date(d + "T00:00:00Z").toLocaleDateString("en-US",
       { weekday: "short", month: "numeric", day: "numeric", timeZone: "UTC" });
   el.innerHTML =
     `<button class="day${day === null ? " active" : ""}" data-day="">📅 All week</button>` +
-    days.map(d =>
-      `<button class="day${day === d ? " active" : ""}" data-day="${d}">${label(d)}</button>`
+    list.map(d =>
+      `<button class="day${day === d ? " active" : ""}${avail[d] ? "" : " nodata"}" data-day="${d}">${label(d)}</button>`
     ).join("");
 }
 
