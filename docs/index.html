@@ -94,6 +94,10 @@
     flex: 0 0 126px; background: var(--tile); border: 1px solid var(--tile-border);
     border-radius: 10px; padding: 12px; text-align: center;
   }
+  .macro-box .m-price {
+    font-size: 15px; font-weight: 800; background: var(--bg); border-radius: 7px;
+    padding: 4px 0; margin-bottom: 8px;
+  }
   .macro-box .kcal { font-size: 24px; font-weight: 800; color: var(--teal); line-height: 1.1; }
   .macro-box .kcal small { display: block; font-size: 11px; color: var(--muted); font-weight: 600; }
   .macro-box .m-row {
@@ -122,6 +126,27 @@
   .opt .count { font-size: 12px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
   .opt.mine .count { color: var(--text); font-weight: 700; }
   .hint { color: var(--muted); font-size: 11.5px; margin-top: 12px; line-height: 1.5; }
+  .cmt-section { margin-top: 14px; border-top: 1px solid var(--tile-border); padding-top: 12px; }
+  .cmt-editor { display: flex; gap: 8px; }
+  .cmt-editor textarea {
+    flex: 1; background: var(--tile); border: 1px solid var(--tile-border); color: var(--text);
+    border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-family: inherit; resize: none;
+  }
+  .cmt-editor textarea::placeholder { color: var(--muted); }
+  .cmt-editor button {
+    background: var(--accent); border: none; color: #fff; border-radius: 8px;
+    padding: 0 14px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  }
+  .cmt-editor button:disabled { opacity: .45; cursor: default; }
+  .cmt-head { color: var(--muted); font-size: 11.5px; margin: 10px 0 6px; }
+  .cmt-list { max-height: 170px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+  .cmt { display: flex; gap: 8px; align-items: flex-start; }
+  .cmt .chip.mini {
+    flex: 0 0 auto; border-radius: 6px; font-weight: 800; font-size: 10.5px;
+    color: #241b3f; padding: 3px 7px;
+  }
+  .cmt p { font-size: 12.5px; line-height: 1.45; margin: 1px 0 0; overflow-wrap: anywhere; }
+  .cmt .you { color: var(--muted); font-size: 11px; }
 
   #gate-card input {
     width: 100%; background: var(--tile); border: 1px solid var(--tile-border); color: var(--text);
@@ -211,7 +236,8 @@ const voter = localStorage.getItem("fkm_voter") ||
 let data = null;          // {items, restaurants, votes, availability, ts} from the worker
 let tab = "r";            // "r" restaurants | "i" items
 let filter = "";
-let day = null;           // "YYYY-MM-DD" or null = whole week
+let day = null;           // null = All, "week" = this week, or "YYYY-MM-DD"
+let firstLoad = true;
 let myWeight = 1;         // 3 for the VIP code — the server decides
 let lastLoad = 0;
 let modalEntity = null;
@@ -227,10 +253,27 @@ function loadMyVotes() {
   for (const k of Object.keys(m)) if (m[k].ts < cutoff) delete m[k];
   return m;
 }
-function setMyVote(key, tier) {
+function setMyVote(key, tier, c) {
   const m = loadMyVotes();
-  m[key] = { tier, ts: Date.now() };
+  m[key] = { tier, c: c || "", ts: Date.now() };
   localStorage.setItem("fkm_myvotes", JSON.stringify(m));
+}
+
+// All reviews (tier + optional comment) for one entity, own overlay applied:
+// Map(voter -> {tier, c, ts}).
+function reviewsFor(e) {
+  const map = new Map();
+  for (const v of data.votes) {
+    if (v.kind === e.kind && v.id === e.id) {
+      map.set(v.voter, { tier: v.tier, c: v.c || "", ts: v.ts || 0 });
+    }
+  }
+  const my = loadMyVotes()[e.kind + ":" + e.id];
+  if (my) {
+    if (my.tier === null) map.delete(voter);
+    else map.set(voter, { tier: my.tier, c: my.c || "", ts: my.ts });
+  }
+  return map;
 }
 
 // --- aggregation ------------------------------------------------------------
@@ -298,14 +341,16 @@ function renderDays() {
     for (let i = 2; i <= 6; i++) days.add(addDaysYmd(data.weekStart, i));
   }
   const list = [...days].sort();
-  if (day && !list.includes(day)) day = null; // week rolled over
+  const weekHasData = Object.keys(avail).length > 0;
+  if (day && day !== "week" && !list.includes(day)) day = null; // week rolled over
   el.style.display = list.length ? "flex" : "none";
   if (!list.length) return;
   const label = (d) =>
     new Date(d + "T00:00:00Z").toLocaleDateString("en-US",
       { weekday: "short", month: "numeric", day: "numeric", timeZone: "UTC" });
   el.innerHTML =
-    `<button class="day${day === null ? " active" : ""}" data-day="">📅 All week</button>` +
+    `<button class="day${day === null ? " active" : ""}" data-day="__all">🌍 All</button>` +
+    `<button class="day${day === "week" ? " active" : ""}${weekHasData ? "" : " nodata"}" data-day="week">📅 All week</button>` +
     list.map(d =>
       `<button class="day${day === d ? " active" : ""}${avail[d] ? "" : " nodata"}" data-day="${d}">${label(d)}</button>`
     ).join("");
@@ -316,13 +361,16 @@ function renderBoard() {
   if (!data) { board.innerHTML = ""; return; }
   renderDays();
   const agg = aggregate();
-  // Day filter: only restaurants seen on that day's menu (items via their
-  // restaurant). Availability names and entity names share the same
-  // lowercased normalization, so plain Set membership works.
-  const avail = day && data.availability?.[day] ? new Set(data.availability[day]) : null;
+  // Day filter: "All" (null) is the whole permanent database, "week" is the
+  // union of this week's days, a date is that day only. Availability names
+  // and entity names share the same lowercased normalization, so plain Set
+  // membership works. Items filter through their restaurant.
+  let availSet = null;
+  if (day === "week") availSet = new Set(Object.values(data.availability || {}).flat());
+  else if (day) availSet = new Set(data.availability?.[day] || []);
   const list = entities().filter(e =>
     (!filter || (e.name + " " + e.sub).toLowerCase().includes(filter)) &&
-    (!avail || avail.has(e.kind === "r" ? e.name : e.sub)));
+    (!availSet || availSet.has(e.kind === "r" ? e.name : e.sub)));
   const rows = TIERS.map(() => []);
   for (const e of list) rows[placement(aggFor(agg, e))].push(e);
 
@@ -334,6 +382,7 @@ function renderBoard() {
   if (!list.length) {
     board.innerHTML = `<div class="empty-note">${
       filter ? "Nothing matches that filter."
+      : day === "week" ? "Nothing recorded for this week yet. Availability fills in as people browse menus."
       : day ? "Nothing recorded for that day yet. Availability fills in as people browse menus."
       : "Nothing here yet. Items appear as the team browses Forkable menus."}</div>`;
     return;
@@ -369,6 +418,7 @@ function macroBoxHtml(e) {
   } else {
     const m = c.macro;
     inner = `
+      ${m.price != null ? `<div class="m-price">$${esc(Number(m.price).toFixed(2))}</div>` : ""}
       <div class="kcal">${esc(m.calories)}<small>kcal</small></div>
       <div class="m-row"><span class="m-label">protein</span><b>${esc(m.protein)}g</b></div>
       <div class="m-row"><span class="m-label">carbs</span><b>${esc(m.carbs)}g</b></div>
@@ -409,18 +459,39 @@ function renderModal() {
       </button>`).join("") +
     `<div class="hint">Tap a tier to cast your vote, or tap your current pick again to remove it.
     You can change your vote anytime; placement follows the average.</div>`;
+  const reviews = reviewsFor(e);
+  const mine = reviews.get(voter) || null;
+  const comments = [...reviews.entries()]
+    .filter(([, r]) => r.c)
+    .sort((x, y) => (y[1].ts || 0) - (x[1].ts || 0));
+  const cmtHtml = `
+    <div class="cmt-section">
+      <div class="cmt-editor">
+        <textarea id="cmt-input" maxlength="200" rows="2"
+          placeholder="${mine ? "Add a comment to your rating (optional)" : "Vote first, then you can add a comment"}"
+          ${mine ? "" : "disabled"}>${mine ? esc(mine.c) : ""}</textarea>
+        <button id="cmt-save" ${mine ? "" : "disabled"}>Save</button>
+      </div>
+      <div class="cmt-head">${comments.length ? `Comments (${comments.length})` : "No comments yet."}</div>
+      ${comments.length ? `<div class="cmt-list">${comments.map(([who, r]) => {
+        const t = TIERS.find(t => t.key === r.tier);
+        return `<div class="cmt"><span class="chip mini" style="background:${t ? t.color : "#888"}">${t ? t.label : "?"}</span><p>${esc(r.c)}${who === voter ? ` <span class="you">(you)</span>` : ""}</p></div>`;
+      }).join("")}</div>` : ""}
+    </div>`;
   $("modal-card").innerHTML = `
     <button class="close" id="modal-close">✕</button>
     <h2>${esc(titleCase(e.name))}</h2>
     <div class="sub">${e.sub ? esc(titleCase(e.sub)) + " · " : ""}${a.total} vote${a.total === 1 ? "" : "s"} so far</div>
     ${e.kind === "i"
       ? `<div class="modal-flex">${macroBoxHtml(e)}<div class="opts-col">${opts}</div></div>`
-      : opts}`;
+      : opts}
+    ${cmtHtml}`;
   $("modal").classList.add("open");
   $("modal-close").onclick = closeModal;
   for (const btn of $("modal-card").querySelectorAll(".opt")) {
     btn.onclick = () => castVote(e, btn.dataset.tier === a.mine ? null : btn.dataset.tier);
   }
+  $("cmt-save").onclick = () => { if (mine) castVote(e, mine.tier); };
 }
 function closeModal() { modalEntity = null; $("modal").classList.remove("open"); }
 
@@ -444,6 +515,11 @@ async function loadData() {
     const d = await r.json();
     if (!d.ok) throw new Error(d.error || "Bad response");
     data = d; myWeight = d.voteWeight || 1; lastLoad = Date.now();
+    if (firstLoad) {
+      // Default to this week's menu when we have any of it, else everything.
+      day = Object.keys(d.availability || {}).length ? "week" : null;
+      firstLoad = false;
+    }
     renderBoard();
     if (modalEntity) renderModal();
   } catch (err) {
@@ -453,8 +529,12 @@ async function loadData() {
 
 async function castVote(entity, tier) {
   const key = entity.kind + ":" + entity.id;
-  const prev = aggFor(aggregate(), entity).mine;
-  setMyVote(key, tier);
+  const prev = reviewsFor(entity).get(voter) || null;
+  // Whatever is typed in the comment box rides along with every vote, so
+  // clicking a tier also saves the comment (and removing the vote drops it).
+  const comment = tier === null ? "" :
+    ($("cmt-input") ? $("cmt-input").value.trim().slice(0, 200) : (prev ? prev.c : ""));
+  setMyVote(key, tier, comment);
   renderBoard(); renderModal();
   try {
     const r = await fetch(WORKER_URL + "/tier/vote", {
@@ -462,13 +542,13 @@ async function castVote(entity, tier) {
       headers: { "Content-Type": "application/json", "x-team-token": token },
       body: JSON.stringify({
         kind: entity.kind === "i" ? "item" : "restaurant",
-        id: entity.id, tier, voter,
+        id: entity.id, tier, voter, comment,
       }),
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok || d.ok === false) throw new Error(d.error || "HTTP " + r.status);
   } catch (err) {
-    setMyVote(key, prev);
+    setMyVote(key, prev ? prev.tier : null, prev ? prev.c : "");
     renderBoard(); renderModal();
     toast("Vote didn't save: " + err.message);
   }
@@ -495,7 +575,7 @@ $("tab-i").onclick = () => { tab = "i"; renderBoard(); };
 $("days").onclick = (ev) => {
   const chip = ev.target.closest(".day");
   if (!chip) return;
-  day = chip.dataset.day || null;
+  day = chip.dataset.day === "__all" ? null : chip.dataset.day;
   renderBoard();
 };
 $("filter").oninput = (ev) => { filter = ev.target.value.trim().toLowerCase(); renderBoard(); };

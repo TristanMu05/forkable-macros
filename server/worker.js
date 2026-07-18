@@ -12,13 +12,13 @@
 //   POST /bulk   {items:[...], menuDate?} (≤300) → cached results only
 //   GET  /tier/data → {ok, voteWeight, items, restaurants, votes,
 //       availability, weekStart, ts}   (60s KV snapshot; ?fresh=1 rebuilds)
-//   POST /tier/vote {kind:"item"|"restaurant", id, tier|null, voter}
+//   POST /tier/vote {kind:"item"|"restaurant", id, tier|null, voter, comment?}
+//   POST /admin/persist-cache  → strips the legacy 7d TTL off old entries
+//   GET  /cache?token=…        → HTML cache viewer (&format=json for raw)
 //
 // menuDate (YYYY-MM-DD, the delivery day being browsed) feeds per-day
 // restaurant availability. Auth also accepts the optional VIP_TOKEN secret,
 // whose votes carry 3x weight.
-//   POST /admin/persist-cache  → strips the legacy 7d TTL off old entries
-//   GET  /cache?token=…        → HTML cache viewer (&format=json for raw)
 //
 // Deploy: see DEPLOY.md. Secrets: GEMINI_API_KEYS (comma-separated),
 // TEAM_TOKEN. KV binding: MACROS.
@@ -298,9 +298,11 @@ async function handleBatch(env, body) {
       const estimates = parseBatch(text, missing.length);
       await Promise.all(
         missingIdx.map((itemIdx, j) => {
-          const r = { ...estimates[j], sources: [] };
-          results[itemIdx] = r;
           const it = items[itemIdx];
+          const r = { ...estimates[j], sources: [] };
+          const price = cleanPrice(it.price);
+          if (price !== null) r.price = price;
+          results[itemIdx] = r;
           return env.MACROS.put(
             cacheKey(it.restaurant, it.name, null),
             JSON.stringify(r)
@@ -317,18 +319,33 @@ async function handleBatch(env, body) {
   return json({ ok: true, results });
 }
 
+// Menu prices ride along with scraped items; keep them on the cached record.
+function cleanPrice(p) {
+  return typeof p === "number" && p > 0 && p < 500
+    ? Math.round(p * 100) / 100
+    : null;
+}
+
 // Read-only bulk cache fetch: returns the cached result (or null) for every
 // item in one round trip. No estimation — clients send misses to /batch.
+// Side effect: a scraped price that's new or changed is merged into the
+// cached record (prices are stable, so this writes ~once per item ever).
 async function handleBulk(env, body) {
   const items = (body.items || []).slice(0, 300);
   if (!items.length) return json({ ok: false, error: "No items." }, 400);
   await recordAvailability(env, body.menuDate, items);
   const results = await Promise.all(
-    items.map((it) =>
-      it?.name
-        ? env.MACROS.get(cacheKey(it.restaurant, it.name, null), "json")
-        : null
-    )
+    items.map(async (it) => {
+      if (!it?.name) return null;
+      const key = cacheKey(it.restaurant, it.name, null);
+      const r = await env.MACROS.get(key, "json");
+      const price = cleanPrice(it.price);
+      if (r && price !== null && r.price !== price) {
+        r.price = price;
+        await env.MACROS.put(key, JSON.stringify(r));
+      }
+      return r;
+    })
   );
   return json({ ok: true, results });
 }
@@ -472,6 +489,8 @@ async function buildTierData(env) {
       votes.push({
         kind: m[1], id: unb64u(m[2]), voter: m[3], tier,
         w: Number(k.metadata?.w) || 1,
+        c: typeof k.metadata?.c === "string" ? k.metadata.c : "",
+        ts: Number(k.metadata?.ts) || 0,
       });
     } catch {}
   }
@@ -512,13 +531,24 @@ async function handleTierVote(env, body, weight) {
       ? body.voter
       : "";
   const tier = body.tier == null ? null : String(body.tier);
+  // Comments live in the key metadata (1KB cap) next to the tier, so the
+  // aggregation stays list-only. 200 chars keeps worst-case multibyte
+  // comments safely under the limit.
+  const comment =
+    typeof body.comment === "string"
+      ? body.comment.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 200)
+      : "";
   if (!kind || !id || !voter) return json({ ok: false, error: "Bad vote." }, 400);
   if (tier !== null && !TIERS.includes(tier)) {
     return json({ ok: false, error: "Unknown tier." }, 400);
   }
   const key = `vote:${kind}:${b64u(id)}:${voter}`;
   if (tier === null) await env.MACROS.delete(key);
-  else await env.MACROS.put(key, tier, { metadata: { t: tier, w: weight } });
+  else {
+    const metadata = { t: tier, w: weight, ts: Date.now() };
+    if (comment) metadata.c = comment;
+    await env.MACROS.put(key, tier, { metadata });
+  }
   // The tierSnapshot is deliberately NOT invalidated here — see the note above.
   return json({ ok: true });
 }

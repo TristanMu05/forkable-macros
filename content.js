@@ -103,11 +103,18 @@ function extractMenuItems(modal) {
     const dedupeKey = `${restaurant}|${name}`.toLowerCase();
     if (seen.has(dedupeKey)) continue; // favorites duplicate tab items
     seen.add(dedupeKey);
-    items.push({
+    const item = {
       restaurant,
       name,
       description: cleanText(card.querySelector("p.card-text")?.textContent).slice(0, 300),
-    });
+    };
+    // Menu price: match against the card text with the description removed,
+    // since descriptions can mention dollar amounts too ("add guac for $2").
+    const priceScope = card.cloneNode(true);
+    priceScope.querySelector("p.card-text")?.remove();
+    const pm = cleanText(priceScope.textContent).match(/\$(\d{1,3}(?:\.\d{2})?)/);
+    if (pm) item.price = parseFloat(pm[1]);
+    items.push(item);
   }
   return items;
 }
